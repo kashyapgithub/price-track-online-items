@@ -37,11 +37,21 @@ via the ↻ button) and pings you with a notification the moment the price drops
 
 Two-tier extraction, in `background.js`:
 1. **Fast path** — plain `fetch()` of the page, looking for JSON-LD/meta price tags. Works for most sites that render server-side or publish SEO metadata (this covers Amazon in most cases).
-2. **Fallback path** — if the fast path finds nothing (typical for a JS-heavy single-page storefront like Flipkart, where a plain fetch returns an empty HTML shell), the extension opens the product URL in a real, inactive background tab, lets it render, reads the live DOM, then closes the tab. Slower and slightly more visible (a tab briefly opens), but far more reliable for React/Vue-rendered sites.
+2. **Fallback path** — if the fast path finds nothing (typical for a JS-heavy single-page storefront like Flipkart, where a plain fetch returns an empty HTML shell), the extension opens the product URL in a real, inactive background tab, lets it render, reads the live DOM, then closes the tab. This is also the main defense against bot-blocking: a genuine Chrome tab has real cookies, a real JS engine, and a real browser fingerprint, so it's inherently far less likely to get flagged than a bare `fetch()` request in the first place.
 
-This needed two new permissions — `tabs` and `scripting` — added to `manifest.json`. You'll see Chrome ask for these on re-install.
+This needed two new permissions — `tabs` and `scripting` — added to `manifest.json`.
 
-**Still not bulletproof:** sites with bot detection (CAPTCHAs, login walls, region-locked pricing) can block both paths. If a product keeps failing, the popup's per-product error line will tell you why — worth checking before assuming it's silently working.
+## On Amazon/Flipkart blocking automated checks
+
+Worth being straight about this: Amazon and Flipkart run real anti-bot systems (Akamai/PerimeterX-style challenges), and there's no reliable, honest way for a browser extension to defeat those outright — proxy rotation, fingerprint spoofing, or CAPTCHA-solving would be needed for that, and none of that is something to build into a personal tool; it's actively working around a site's security controls, not just "scraping."
+
+What this version does instead, all legitimate:
+- **Distinguishes a block from a broken link.** If a page looks like a CAPTCHA/verification interstitial rather than just missing a price, the product card now says so explicitly (🚫 icon) instead of the generic "couldn't find a price" — so you know it's the site being defensive, not your link being wrong.
+- **Tracks consecutive failures per product**, so "blocked once" and "blocked 6 days running" read differently in the UI.
+- **Randomized delay (3–8s) between each product check** in a run, instead of firing requests back-to-back — a fixed-interval burst is exactly the pattern these systems are tuned to catch; a bit of jitter costs nothing.
+- **Checks once a day, not more** — frequency itself is a major signal; daily is deliberately conservative.
+
+If a specific product stays blocked for days regardless, that's the site actively working — at that point the realistic options are: check it manually now and then, or (for Amazon specifically) look at Amazon's own Product Advertising API or a service like Keepa, both of which get price data through Amazon's front door instead of around it. There's no equivalent official option for Flipkart, so Flipkart links will always be the more fragile side of this tool.
 
 ## Known limitations (worth knowing upfront)
 

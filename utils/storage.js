@@ -17,6 +17,8 @@
  *     priceHistory: [{ price: number, checkedAt: number }]  -> capped list, newest last
  *     lastCheckedAt: number|null  -> epoch ms
  *     lastError: string|null      -> last scrape error, if any (shown in popup)
+ *     blocked: boolean            -> true if the last failure looked like an anti-bot block, not a missing price
+ *     consecutiveFailures: number -> how many checks in a row have failed (any reason)
  *     addedAt: number             -> epoch ms
  *   },
  *   ...
@@ -51,6 +53,8 @@ export async function addProduct({ url, title }) {
     priceHistory: [],
     lastCheckedAt: null,
     lastError: null,
+    blocked: false,
+    consecutiveFailures: 0,
     addedAt: Date.now(),
   };
 
@@ -72,7 +76,7 @@ export async function removeProduct(id) {
  * Returns { product, droppedFrom } — droppedFrom is the previous price if
  * this update represents a genuine price drop, otherwise null.
  */
-export async function recordPriceCheck(id, { price, error }) {
+export async function recordPriceCheck(id, { price, error, blocked = false }) {
   const products = await getProducts();
   const index = products.findIndex((p) => p.id === id);
   if (index === -1) return { product: null, droppedFrom: null };
@@ -82,12 +86,16 @@ export async function recordPriceCheck(id, { price, error }) {
 
   if (error) {
     product.lastError = error;
+    product.blocked = blocked;
+    product.consecutiveFailures = (product.consecutiveFailures || 0) + 1;
     products[index] = product;
     await saveProducts(products);
     return { product, droppedFrom: null };
   }
 
   product.lastError = null;
+  product.blocked = false;
+  product.consecutiveFailures = 0;
   const previousPrice = product.currentPrice;
   const isDrop = typeof previousPrice === "number" && price < previousPrice;
 

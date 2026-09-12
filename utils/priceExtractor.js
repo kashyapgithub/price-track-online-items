@@ -92,6 +92,32 @@ export function extractTitle(html) {
 }
 
 /**
+ * Detects the common "we think you're a bot" interstitials — CAPTCHA
+ * challenges, "unusual traffic" warnings, hard blocks — as distinct from a
+ * page that simply doesn't have a price. This matters because the two
+ * failure modes need very different messaging: "couldn't find a price" begs
+ * the user to check the link, while "site is blocking automated checks"
+ * tells them the truth — it's not going to resolve itself by retrying
+ * harder, only by giving the site less reason to flag the traffic.
+ */
+export function isBlockedPage(html) {
+  const markers = [
+    /captcha/i,
+    /enter the characters you see below/i,
+    /unusual traffic/i,
+    /automated (access|queries|requests)/i,
+    /robot check/i,
+    /access denied/i,
+    /verify you are a human/i,
+    /request blocked/i,
+  ];
+  // Only check the first chunk — a false positive from an unrelated match deep
+  // in a huge page is more likely than a genuine block banner appearing there.
+  const head = html.slice(0, 5000);
+  return markers.some((pattern) => pattern.test(head));
+}
+
+/**
  * Main entry point. Returns a numeric price, or null if nothing could be found.
  * @param {string} html - raw HTML text of the product page
  * @param {string} url - the page URL (used for site-specific fallbacks)

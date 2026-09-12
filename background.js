@@ -15,7 +15,7 @@
  */
 
 import { getProducts, recordPriceCheck, setMeta } from "./utils/storage.js";
-import { extractPrice } from "./utils/priceExtractor.js";
+import { extractPrice, isBlockedPage } from "./utils/priceExtractor.js";
 import { getSettings } from "./utils/settings.js";
 import { logDrop } from "./utils/dropLog.js";
 
@@ -79,11 +79,16 @@ async function checkAllProducts() {
   const drops = []; // { product, oldPrice, newPrice, percent }
   let errorCount = 0;
 
-  // Sequential (not Promise.all) to avoid hammering multiple retailers at once.
+  // Sequential (not Promise.all) to avoid hammering multiple retailers at
+  // once, PLUS a randomized pause between products. A fixed-interval,
+  // zero-delay burst of requests is exactly the pattern anti-bot systems
+  // are built to flag — a few seconds of human-ish jitter costs nothing and
+  // makes the traffic look far less like a scraper.
   for (const product of products) {
     const result = await checkSingleProduct(product, settings.minDropPercent);
     if (result.failed) errorCount += 1;
     if (result.drop) drops.push(result.drop);
+    await sleep(3000 + Math.random() * 5000);
   }
 
   await setMeta({
@@ -124,17 +129,23 @@ async function checkAllProducts() {
  */
 async function checkSingleProduct(product, minDropPercent) {
   try {
-    let price = await extractPriceViaFetch(product.url);
+    const fetchResult = await extractPriceViaFetch(product.url);
+    let price = fetchResult.price;
+    let blockedSoFar = fetchResult.blocked;
 
     if (price === null) {
-      price = await extractPriceViaTab(product.url);
+      const tabResult = await extractPriceViaTab(product.url);
+      price = tabResult.price;
+      // Only a genuine improvement if the real-browser tab ALSO hit a wall —
+      // otherwise the tab result (more trustworthy) should win.
+      blockedSoFar = blockedSoFar && tabResult.blocked;
     }
 
     if (price === null) {
-      await recordPriceCheck(product.id, {
-        price: null,
-        error: "Couldn't find a price, even after rendering the page.",
-      });
+      const message = blockedSoFar
+        ? "This site is currently blocking automated checks (CAPTCHA/verification page). Not a broken link — it should resolve once traffic looks less automated. Will keep trying daily."
+        : "Couldn't find a price, even after rendering the page.";
+      await recordPriceCheck(product.id, { price: null, error: message, blocked: blockedSoFar });
       return { failed: true, drop: null };
     }
 
@@ -158,7 +169,7 @@ async function extractPriceViaFetch(url) {
   const response = await fetch(url, { credentials: "omit" });
   if (!response.ok) throw new Error(`Page returned HTTP ${response.status}`);
   const html = await response.text();
-  return extractPrice(html, url);
+  return { price: extractPrice(html, url), blocked: isBlockedPage(html) };
 }
 
 /**
@@ -166,6 +177,10 @@ async function extractPriceViaFetch(url) {
  * its JS runs and the price actually renders, read the fully-rendered HTML
  * out of it via chrome.scripting, then close the tab. Needed for sites that
  * render price client-side and return an empty shell to a plain fetch.
+ *
+ * This IS the legitimate answer to "sites blocking bot access" — a real
+ * Chrome tab has genuine cookies, JS execution, and browser fingerprint, so
+ * it's far less likely to be flagged than a bare fetch() in the first place.
  */
 async function extractPriceViaTab(url) {
   let tab;
@@ -180,12 +195,17 @@ async function extractPriceViaTab(url) {
       func: () => document.documentElement.outerHTML,
     });
 
-    return extractPrice(html, url);
+    return { price: extractPrice(html, url), blocked: isBlockedPage(html) };
   } catch {
-    return null;
+    return { price: null, blocked: false };
   } finally {
     if (tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
   }
+}
+
+/** Small delay helper for the inter-product jitter. */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Resolve once a tab finishes loading (or after a timeout, to avoid hanging forever). */

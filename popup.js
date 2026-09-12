@@ -225,7 +225,9 @@ function buildProductRow(product) {
   sparklineWrap.appendChild(buildSparkline(product.priceHistory));
 
   if (product.lastError) {
-    metaEl.textContent = product.lastError;
+    metaEl.textContent = product.blocked
+      ? `🚫 ${product.lastError}${product.consecutiveFailures > 1 ? ` (${product.consecutiveFailures} days running)` : ""}`
+      : product.lastError;
     metaEl.classList.add("error");
   } else if (product.lastCheckedAt) {
     metaEl.textContent = `Checked ${formatRelativeTime(product.lastCheckedAt)}`;
