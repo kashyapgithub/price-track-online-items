@@ -53,6 +53,16 @@ What this version does instead, all legitimate:
 
 If a specific product stays blocked for days regardless, that's the site actively working — at that point the realistic options are: check it manually now and then, or (for Amazon specifically) look at Amazon's own Product Advertising API or a service like Keepa, both of which get price data through Amazon's front door instead of around it. There's no equivalent official option for Flipkart, so Flipkart links will always be the more fragile side of this tool.
 
+## Reference price for the drop %
+
+The notification-triggering drop % is always **day-over-day**: today's price vs. yesterday's stored price (`product.currentPrice` before the check). This keeps the anti-spam threshold meaningful and simple — "did it move since I last saw it."
+
+The popup shows two more numbers as *context only* (they never trigger a notification on their own):
+- **vs. all-time low** — "at all-time low" or "N% above lowest."
+- **vs. when added** — "down N% since added" / "up N% since added," comparing to the very first price recorded for that product.
+
+So a slow bleed that never trips the daily threshold (₹2000 → ₹1990 → ₹1980…) still shows up honestly as "down X% since added," even though no single day's move was big enough to notify on.
+
 ## Known limitations (worth knowing upfront)
 
 - **Flipkart-style JS-rendered sites lean on the slower tab-based fallback**, which briefly opens a real (inactive) tab — a bit more visible and a few seconds slower than a plain fetch, but far more reliable than trying to parse an empty HTML shell.

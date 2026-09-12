@@ -222,6 +222,8 @@ function buildProductRow(product) {
   lowestEl.textContent =
     product.lowestPrice !== null ? `lowest ₹${product.lowestPrice}` : "";
 
+  node.querySelector(".product-context").appendChild(buildContextLine(product));
+
   sparklineWrap.appendChild(buildSparkline(product.priceHistory));
 
   if (product.lastError) {
@@ -241,6 +243,46 @@ function buildProductRow(product) {
   });
 
   return node;
+}
+
+/**
+ * Extra context beyond the day-over-day drop %: where today's price sits
+ * relative to the all-time low, and relative to the price when you first
+ * started tracking it. The day-over-day number (computeDropPercent, above)
+ * is what actually decides whether a notification fires — this is just
+ * additional context shown in the popup, not a second trigger.
+ */
+function buildContextLine(product) {
+  const el = document.createElement("div");
+  el.className = "context-line";
+
+  if (product.currentPrice === null || product.priceHistory.length < 1) {
+    return el; // nothing to compare yet
+  }
+
+  const parts = [];
+
+  if (product.lowestPrice !== null) {
+    if (product.currentPrice <= product.lowestPrice) {
+      parts.push("at all-time low");
+    } else {
+      const aboveLowPct = Math.round(
+        ((product.currentPrice - product.lowestPrice) / product.lowestPrice) * 100
+      );
+      parts.push(`${aboveLowPct}% above lowest`);
+    }
+  }
+
+  const firstPrice = product.priceHistory[0].price;
+  if (firstPrice !== product.currentPrice) {
+    const vsAddedPct = Math.round(((firstPrice - product.currentPrice) / firstPrice) * 100);
+    parts.push(
+      vsAddedPct > 0 ? `down ${vsAddedPct}% since added` : `up ${Math.abs(vsAddedPct)}% since added`
+    );
+  }
+
+  el.textContent = parts.join(" · ");
+  return el;
 }
 
 /** True if the current price is the lowest ever seen (a good visual cue for "it dropped"). */
