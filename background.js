@@ -10,18 +10,22 @@
  *      notifyDrops() for the anti-spam logic.
  *   4. Handle "search by description" — checks a fixed list of retailers
  *      (utils/siteSearch.js) and returns the top match from each.
- *   5. Listen for manual messages from the popup (check now / search).
+ *   5. Handle dwell-based tracking suggestions — when contentScript.js
+ *      reports 60s of visible time on a product page, offer to track it
+ *      via an actionable notification (see handleDwellDetected below).
+ *   6. Listen for manual messages from the popup (check now / search / one-off check).
  *
  * Runs as an ES module (see manifest.json "type": "module") so it can use
  * import/export instead of importScripts().
  */
 
-import { getProducts, recordPriceCheck, setMeta } from "./utils/storage.js";
+import { getProducts, addProduct, recordPriceCheck, setMeta, isUrlTracked } from "./utils/storage.js";
 import { extractPrice, isBlockedPage } from "./utils/priceExtractor.js";
 import { getSettings } from "./utils/settings.js";
 import { logDrop } from "./utils/dropLog.js";
 import { renderUrlToHtml, sleep } from "./utils/tabRenderer.js";
 import { RETAILERS } from "./utils/siteSearch.js";
+import { savePendingCapture, getPendingCapture, clearPendingCapture } from "./utils/pendingCaptures.js";
 
 const ALARM_NAME = "daily-price-check";
 const CHECK_INTERVAL_MINUTES = 60 * 24; // once a day
@@ -75,6 +79,74 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ ok: true });
     });
     return true;
+  }
+  if (message?.type === "DWELL_THRESHOLD_REACHED") {
+    handleDwellDetected(message);
+    // Fire-and-forget — the content script doesn't need a response.
+  }
+});
+
+// ---------------------------------------------------------------------------
+// "Looking at this a while?" — triggered by contentScript.js after the tab
+// has been VISIBLY on a product page for 60s. This is the honest substitute
+// for "auto-open the extension panel": Chrome deliberately does not let
+// extensions force their popup open without a user gesture (that
+// restriction exists specifically to stop extensions from hijacking the
+// screen), so an actionable notification is the closest equivalent Chrome
+// actually allows — same net effect, one click to track, no popup needed.
+// ---------------------------------------------------------------------------
+async function handleDwellDetected({ url, title, html }) {
+  const alreadyTracked = await isUrlTracked(url);
+  if (alreadyTracked) return; // nothing to suggest
+
+  const price = extractPrice(html, url);
+
+  // Stable id per URL (not per report) so a second tab on the same product
+  // reaching 60s just refreshes the same notification instead of stacking
+  // a duplicate — same anti-spam instinct as the price-drop batching.
+  const notificationId = `dwell-track-${simpleUrlId(url)}`;
+
+  await savePendingCapture(notificationId, { url, title, price });
+
+  chrome.notifications.create(notificationId, {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: "Still looking at this?",
+    message: `${title}\nTrack it so you catch a price drop later.`,
+    buttons: [{ title: "Track this page" }, { title: "Not now" }],
+    priority: 1,
+  });
+}
+
+function simpleUrlId(url) {
+  return encodeURIComponent(url).replace(/[^a-zA-Z0-9]/g, "").slice(0, 60);
+}
+
+// Button 0 ("Track this page") on a dwell notification tracks the product
+// using the page snapshot captured at the 60s mark — no re-fetch needed.
+chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
+  if (!notificationId.startsWith("dwell-track-")) return;
+
+  if (buttonIndex === 0) {
+    const pending = await getPendingCapture(notificationId);
+    if (pending) {
+      const product = await addProduct({ url: pending.url, title: pending.title });
+      await recordPriceCheck(product.id, {
+        price: pending.price,
+        error: pending.price === null ? "Couldn't find a price on this page yet." : null,
+      });
+    }
+  }
+
+  await clearPendingCapture(notificationId);
+  chrome.notifications.clear(notificationId);
+});
+
+// Clean up the pending snapshot if the user dismisses the notification
+// entirely (swipe away / auto-timeout) rather than clicking a button.
+chrome.notifications.onClosed.addListener((notificationId) => {
+  if (notificationId.startsWith("dwell-track-")) {
+    clearPendingCapture(notificationId);
   }
 });
 
@@ -286,9 +358,16 @@ function notifyDrops(drops) {
 
 // Clicking a per-product notification opens that product's page.
 // Clicking the summary notification opens the popup instead.
+// Clicking the BODY of a dwell notification (not one of its buttons) just
+// opens the product page — tracking itself only happens via the button.
 chrome.notifications.onClicked.addListener(async (notificationId) => {
   if (notificationId === "price-drop-summary") {
     chrome.action.openPopup().catch(() => {});
+    return;
+  }
+  if (notificationId.startsWith("dwell-track-")) {
+    const pending = await getPendingCapture(notificationId);
+    if (pending) chrome.tabs.create({ url: pending.url });
     return;
   }
   if (!notificationId.startsWith("price-drop-")) return;

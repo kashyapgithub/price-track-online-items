@@ -21,6 +21,20 @@
     "type": "module"
   },
 
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.amazon.in/*",
+        "*://*.amazon.com/*",
+        "*://*.flipkart.com/*",
+        "*://*.croma.com/*",
+        "*://*.reliancedigital.in/*"
+      ],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
   "action": {
     "default_popup": "popup.html",
     "default_title": "Price Drop Tracker"

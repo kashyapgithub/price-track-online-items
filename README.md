@@ -25,6 +25,8 @@ notification the moment a price drops.
 - **utils/storage.js** — all reads/writes to the tracked product list and the daily `meta` run summary.
 - **utils/settings.js** — user notification preferences (on/off, minimum drop % to notify on).
 - **utils/dropLog.js** — a rolling history of every detected drop, notified or not.
+- **utils/pendingCaptures.js** — briefly holds a page snapshot between "dwell notification shown" and "user clicks Track," since a service worker can't be trusted to keep it in memory that whole time.
+- **contentScript.js** — runs only on the four supported retailers; watches how long the tab has actually been visible on a product page and reports it to `background.js` at 60 seconds. Powers the "still looking at this?" notification below.
 
 ## How prices are found (and why it holds up against blocking)
 
@@ -96,6 +98,19 @@ How it's different from every other extraction path in this extension: it reads 
 - **Already tracking it?** The banner still shows, but in a neutral gray with no button — "Already tracking this page" — so you always know the state without needing to scroll the list.
 - **Not a supported retailer, or not a product page?** No banner at all. It stays out of the way rather than showing something irrelevant.
 
+## "Still looking at this?" — 60-second dwell notification
+
+This is the honest version of "auto-open the extension panel while I'm browsing." That literal request isn't something I built, because it isn't something Chrome allows: extensions cannot force their own popup open without a direct user click — that restriction exists specifically so extensions can't hijack your screen while you browse, and it applies no matter how the trigger is wired up.
+
+What actually happens instead, and gets you the same outcome:
+- `contentScript.js` runs only on the four supported retailers and watches how long the tab has been genuinely **visible** on a product page — pausing while you switch tabs or minimize, not just counting wall-clock time since the page loaded.
+- At 60 seconds of real, visible dwell time, it sends the page's own already-rendered HTML to `background.js` (no extra request to the retailer — same trick as "Track this page").
+- If you're not already tracking that product, a Chrome notification appears: **"Still looking at this? [product] — Track it so you catch a price drop later,"** with a **Track this page** button right on the notification. One click tracks it — you never need to open the popup at all.
+- If you are already tracking it, nothing happens — no redundant nudge.
+- Multiple tabs open on the same product only ever produce one notification (it refreshes in place rather than stacking), same anti-spam instinct as the price-drop batching.
+
+**Coverage note:** the dwell watcher only runs on `amazon.in`, `amazon.com`, `flipkart.com`, `croma.com`, and `reliancedigital.in` (declared in `manifest.json`'s `content_scripts`). Other Amazon country domains (`.co.uk`, `.de`, etc.) aren't covered by this specific feature yet — add another `matches` entry to extend it.
+
 ## Removing a tracked product
 
 Click ✕ on any product card. It's removed immediately, but a toast appears at the bottom — **"Removed '[title]' · Undo"** — for 6 seconds, in case that was a misclick. Undo restores the exact product, price history and all, not a fresh re-add.
@@ -105,3 +120,4 @@ Click ✕ on any product card. It's removed immediately, but a toast appears at 
 - **New site for direct price tracking** — add one regex to `extractFromKnownSites()` in `utils/priceExtractor.js`.
 - **New retailer for description search** — add one entry (`buildSearchUrl` + `parseFirstResult`) to the `RETAILERS` array in `utils/siteSearch.js`.
 - **New retailer for "Track this page"** — add one entry to `DETECTORS` in `utils/productPageDetector.js`.
+- **New retailer for the dwell notification** — add a `matches` entry in `manifest.json`'s `content_scripts`, and mirror its path pattern in `contentScript.js`'s `PATH_PATTERNS`.
