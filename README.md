@@ -17,7 +17,7 @@ via the ↻ button) and pings you with a notification the moment the price drops
 - **background.js** — a service worker that runs once a day via `chrome.alarms`, fetches each product page, and compares the price.
 - **utils/priceExtractor.js** — pulls the price out of the page HTML. It checks, in order: JSON-LD product schema → OpenGraph/itemprop meta tags → a couple of hardcoded fallbacks for Amazon/Flipkart.
 - **utils/storage.js** — all reads/writes to the tracked product list and the daily `meta` run summary.
-- **utils/settings.js** — user notification preferences (on/off, drop threshold, quiet hours).
+- **utils/settings.js** — user notification preferences (on/off, minimum drop % to notify on).
 - **utils/dropLog.js** — a rolling history of every detected drop, notified or not.
 
 ## How you're kept in the loop (and kept spam-free)
@@ -55,10 +55,11 @@ If a specific product stays blocked for days regardless, that's the site activel
 
 ## Known limitations (worth knowing upfront)
 
-- **Price detection isn't universal.** Most e-commerce sites publish price metadata for SEO (which this reads), but some heavily JS-rendered sites (prices injected by React/Vue after load) won't show a price in the raw HTML at all. If a product shows "Couldn't find a price," that site likely needs a site-specific fix.
-- **Daily granularity.** Checks run once every 24h by default (`CHECK_INTERVAL_MINUTES` in `background.js`) — set it lower if you want tighter checks, but be considerate of the sites you're pinging.
+- **Flipkart-style JS-rendered sites lean on the slower tab-based fallback**, which briefly opens a real (inactive) tab — a bit more visible and a few seconds slower than a plain fetch, but far more reliable than trying to parse an empty HTML shell.
+- **Daily granularity.** Checks run once every 24h by default (`CHECK_INTERVAL_MINUTES` in `background.js`) — you can lower it, but more frequent checks mean more automated traffic to the same sites, which raises block risk (see above).
 - **The browser must be open** for `chrome.alarms` to fire — this isn't a server-side tracker, it won't check prices while Chrome is fully closed.
-- **No login/session support.** It fetches pages anonymously, so member-only or region-locked prices won't be picked up.
+- **No login/session support.** It checks pages anonymously, so member-only or region-locked prices won't be picked up.
+- **Persistent blocks need a different tool, not a more aggressive scraper** — see the Amazon/Flipkart section above.
 
 ## Extending it
 
