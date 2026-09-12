@@ -28,8 +28,7 @@ via the ↻ button) and pings you with a notification the moment the price drops
 - **A ⚙ settings panel in the popup** lets you control the pop-ups directly:
   - Turn notifications fully on/off.
   - Set a minimum drop percentage to notify on (Any / 1% / 3% / 5% / 10%) — filters out ₹1–2 noise from dynamic pricing.
-  - Set quiet hours (e.g. 22:00–08:00) during which no pop-up fires at all.
-- **Nothing is ever truly lost.** Every detected drop is written to a small rolling log (`utils/dropLog.js`, last 20 entries) regardless of whether a pop-up was actually shown — visible under "Recent drops" in the popup, marked `(muted)` if it happened during quiet hours or with notifications off.
+- **Nothing is ever truly lost.** Every detected drop is written to a small rolling log (`utils/dropLog.js`, last 20 entries) regardless of whether a pop-up was actually shown — visible under "Recent drops" in the popup, marked `(muted)` if notifications happened to be off.
 - **Same price never re-notifies** — a drop only counts when the new price is strictly below the last *stored* price.
 - **A green badge number on the toolbar icon** appears the moment a check finds a drop, and clears once you open the popup.
 - **The status strip in the popup** always shows "Checked N products Xh ago · N drops found" — proof the daily run happened, with a red dot if anything failed to fetch.

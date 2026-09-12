@@ -16,7 +16,7 @@
 
 import { getProducts, recordPriceCheck, setMeta } from "./utils/storage.js";
 import { extractPrice } from "./utils/priceExtractor.js";
-import { getSettings, isWithinQuietHours } from "./utils/settings.js";
+import { getSettings } from "./utils/settings.js";
 import { logDrop } from "./utils/dropLog.js";
 
 const ALARM_NAME = "daily-price-check";
@@ -95,10 +95,10 @@ async function checkAllProducts() {
 
   updateBadge(drops.length);
 
-  // Quiet hours / the master on-off switch only affect the pop-up itself —
-  // every drop is still written to the log below so nothing is ever lost,
-  // just possibly silent until you open the popup.
-  const suppressNotification = !settings.notificationsEnabled || isWithinQuietHours(settings);
+  // The master on-off switch only affects the pop-up itself — every drop is
+  // still written to the log below so nothing is ever lost, just possibly
+  // silent (if notifications are turned off) until you open the popup.
+  const suppressNotification = !settings.notificationsEnabled;
 
   for (const drop of drops) {
     await logDrop({

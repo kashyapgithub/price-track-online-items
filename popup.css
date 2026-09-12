@@ -324,11 +324,6 @@ h1 {
   border-radius: 6px;
   border: 1px solid var(--border);
 }
-.quiet-hours-range {
-  justify-content: flex-start;
-  gap: 6px;
-  padding-left: 20px;
-}
 .settings-note {
   font-size: 10px;
   color: var(--gray);

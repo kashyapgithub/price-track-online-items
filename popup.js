@@ -26,9 +26,6 @@ const settingsBtn = document.getElementById("settingsBtn");
 const settingsPanel = document.getElementById("settingsPanel");
 const notifEnabled = document.getElementById("notifEnabled");
 const minDropPercent = document.getElementById("minDropPercent");
-const quietHoursEnabled = document.getElementById("quietHoursEnabled");
-const quietHoursStart = document.getElementById("quietHoursStart");
-const quietHoursEnd = document.getElementById("quietHoursEnd");
 
 const recentDropsSection = document.getElementById("recentDropsSection");
 const recentDropsList = document.getElementById("recentDropsList");
@@ -48,25 +45,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 // ---------------------------------------------------------------------------
 // Settings panel
 // ---------------------------------------------------------------------------
-function populateHourOptions(select) {
-  for (let h = 0; h < 24; h++) {
-    const opt = document.createElement("option");
-    opt.value = h;
-    opt.textContent = `${String(h).padStart(2, "0")}:00`;
-    select.appendChild(opt);
-  }
-}
-
 async function initSettingsPanel() {
-  populateHourOptions(quietHoursStart);
-  populateHourOptions(quietHoursEnd);
-
   const settings = await getSettings();
   notifEnabled.checked = settings.notificationsEnabled;
   minDropPercent.value = String(settings.minDropPercent);
-  quietHoursEnabled.checked = settings.quietHoursEnabled;
-  quietHoursStart.value = String(settings.quietHoursStart);
-  quietHoursEnd.value = String(settings.quietHoursEnd);
 
   settingsBtn.addEventListener("click", () => {
     settingsPanel.classList.toggle("hidden");
@@ -77,9 +59,6 @@ async function initSettingsPanel() {
   for (const [el, key, isNumber] of [
     [notifEnabled, "notificationsEnabled", false],
     [minDropPercent, "minDropPercent", true],
-    [quietHoursEnabled, "quietHoursEnabled", false],
-    [quietHoursStart, "quietHoursStart", true],
-    [quietHoursEnd, "quietHoursEnd", true],
   ]) {
     el.addEventListener("change", async () => {
       const value = el.type === "checkbox" ? el.checked : isNumber ? Number(el.value) : el.value;
