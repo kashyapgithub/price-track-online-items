@@ -81,7 +81,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "DWELL_THRESHOLD_REACHED") {
-    handleDwellDetected(message);
+    handleDwellDetected(message).catch((err) => console.error("Dwell handling failed:", err));
     // Fire-and-forget — the content script doesn't need a response.
   }
 });
@@ -98,6 +98,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function handleDwellDetected({ url, title, html }) {
   const alreadyTracked = await isUrlTracked(url);
   if (alreadyTracked) return; // nothing to suggest
+
+  // Same master switch as price-drop notifications — if the user turned
+  // notifications off, this suggestion shouldn't sneak through either.
+  const settings = await getSettings();
+  if (!settings.notificationsEnabled) return;
 
   const price = extractPrice(html, url);
 
@@ -172,11 +177,11 @@ async function checkAllProducts() {
   // zero-delay burst of requests is exactly the pattern anti-bot systems
   // are built to flag — a few seconds of human-ish jitter costs nothing and
   // makes the traffic look far less like a scraper.
-  for (const product of products) {
-    const result = await checkSingleProduct(product, settings.minDropPercent);
+  for (let i = 0; i < products.length; i++) {
+    const result = await checkSingleProduct(products[i], settings.minDropPercent);
     if (result.failed) errorCount += 1;
     if (result.drop) drops.push(result.drop);
-    await sleep(3000 + Math.random() * 5000);
+    if (i < products.length - 1) await sleep(3000 + Math.random() * 5000);
   }
 
   await setMeta({
@@ -224,9 +229,10 @@ async function checkSingleProduct(product, minDropPercent) {
     if (price === null) {
       const tabResult = await extractPriceViaTab(product.url);
       price = tabResult.price;
-      // Only a genuine improvement if the real-browser tab ALSO hit a wall —
-      // otherwise the tab result (more trustworthy) should win.
-      blockedSoFar = blockedSoFar && tabResult.blocked;
+      // Trust the real-browser tab's verdict over the plain fetch's — it's
+      // the more authoritative signal since it's what actually happened
+      // last, and a real browser is far less likely to be misjudged.
+      blockedSoFar = tabResult.blocked;
     }
 
     if (price === null) {
@@ -285,7 +291,8 @@ async function extractPriceViaTab(url) {
 async function searchRetailers(query) {
   const results = [];
 
-  for (const retailer of RETAILERS) {
+  for (let i = 0; i < RETAILERS.length; i++) {
+    const retailer = RETAILERS[i];
     const searchUrl = retailer.buildSearchUrl(query);
     try {
       const html = await renderUrlToHtml(searchUrl);
@@ -306,7 +313,7 @@ async function searchRetailers(query) {
     }
     // Same jitter reasoning as the daily price checks — don't fire a burst
     // of automated searches at four different sites back-to-back.
-    await sleep(2000 + Math.random() * 3000);
+    if (i < RETAILERS.length - 1) await sleep(2000 + Math.random() * 3000);
   }
 
   return results;
