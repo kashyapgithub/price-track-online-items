@@ -1,7 +1,8 @@
 # Price Drop Tracker (Chrome Extension)
 
-Paste in product links, and it checks their price once a day (plus on-demand
-via the ↻ button) and pings you with a notification the moment the price drops.
+Paste in product links — or just search by description — and it checks
+prices once a day (plus on-demand via the ↻ button) and pings you with a
+notification the moment a price drops.
 
 ## How to install (unpacked, no Chrome Web Store needed)
 
@@ -19,6 +20,8 @@ via the ↻ button) and pings you with a notification the moment the price drops
 - **utils/storage.js** — all reads/writes to the tracked product list and the daily `meta` run summary.
 - **utils/settings.js** — user notification preferences (on/off, minimum drop % to notify on).
 - **utils/dropLog.js** — a rolling history of every detected drop, notified or not.
+- **utils/siteSearch.js** — the "search by description" feature: a small fixed list of retailers, how to build each one's search URL, and how to parse its first result.
+- **utils/tabRenderer.js** — shared helper (used by both price-checking and description-search) that renders a URL in a real, inactive Chrome tab and returns the rendered HTML.
 
 ## How you're kept in the loop (and kept spam-free)
 
@@ -76,3 +79,16 @@ So a slow bleed that never trips the daily threshold (₹2000 → ₹1990 → �
 Adding support for a new site is just adding one more regex to
 `extractFromKnownSites()` in `utils/priceExtractor.js` — no need to touch
 anything else.
+
+## Search by description (what it is, and what it isn't)
+
+The popup has a "Search by description" tab as an alternative to pasting a link. Type something like `Sony WH-1000XM5 headphones` and it checks a **small, fixed list of retailers** — currently Amazon, Flipkart, Croma, Reliance Digital, defined in `utils/siteSearch.js` — and shows the top match + price from each. You pick which one (if any) to start tracking; it never silently decides "the best" price for you.
+
+**What this deliberately is NOT:** a general web search or a "find the best deal anywhere" engine. That would mean scraping Google/Bing search results, which are defended far more aggressively than product pages — building around that is a different (and worse) problem than the Amazon/Flipkart product-page blocking discussed above, so it's out of scope on purpose.
+
+**Reliability varies by site**, and it's worth knowing which:
+- **Amazon and Flipkart** have dedicated parsers matched to their current result-page markup — reasonably reliable, but will need a small update in `utils/siteSearch.js` if either site changes its layout (search result markup shifts more often than product-page markup).
+- **Croma and Reliance Digital** use a generic best-effort heuristic (first product link + nearest ₹ amount) since they don't have dedicated parsers yet — expect more misfires here than on Amazon/Flipkart.
+- Searches use the same real-tab rendering and inter-request jitter as the daily price checks, for the same bot-detection reasons.
+
+Adding a fifth retailer is one new entry in the `RETAILERS` array in `utils/siteSearch.js` — a `buildSearchUrl()` and a `parseFirstResult()`, nothing else needs to change.

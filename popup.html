@@ -42,12 +42,37 @@
     <span id="runSummaryText">Not checked yet</span>
   </div>
 
+  <div class="add-mode-toggle">
+    <button id="modeUrlBtn" class="mode-btn active">Paste link</button>
+    <button id="modeSearchBtn" class="mode-btn">Search by description</button>
+  </div>
+
   <form id="addForm">
     <input type="url" id="urlInput" placeholder="Paste a product link…" required />
     <button type="submit">Track</button>
   </form>
 
+  <form id="searchForm" class="hidden">
+    <input type="text" id="descInput" placeholder="e.g. Sony WH-1000XM5 headphones" required />
+    <button type="submit">Search</button>
+  </form>
+
   <p id="statusMsg"></p>
+
+  <ul id="searchResultsList" class="search-results hidden"></ul>
+
+  <template id="searchResultTemplate">
+    <li class="search-result">
+      <div class="sr-main">
+        <span class="sr-retailer"></span>
+        <a class="sr-title" target="_blank" rel="noopener"></a>
+      </div>
+      <div class="sr-side">
+        <span class="sr-price"></span>
+        <button class="sr-track-btn">Track</button>
+      </div>
+    </li>
+  </template>
 
   <details id="recentDropsSection" class="recent-drops hidden">
     <summary>Recent drops</summary>

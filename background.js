@@ -8,7 +8,9 @@
  *      a notification if the price genuinely dropped.
  *   3. Fire ONE notification per run, not one per product — see
  *      notifyDrops() for the anti-spam logic.
- *   4. Listen for a manual "check now" message from the popup.
+ *   4. Handle "search by description" — checks a fixed list of retailers
+ *      (utils/siteSearch.js) and returns the top match from each.
+ *   5. Listen for manual messages from the popup (check now / search).
  *
  * Runs as an ES module (see manifest.json "type": "module") so it can use
  * import/export instead of importScripts().
@@ -18,6 +20,8 @@ import { getProducts, recordPriceCheck, setMeta } from "./utils/storage.js";
 import { extractPrice, isBlockedPage } from "./utils/priceExtractor.js";
 import { getSettings } from "./utils/settings.js";
 import { logDrop } from "./utils/dropLog.js";
+import { renderUrlToHtml, sleep } from "./utils/tabRenderer.js";
+import { RETAILERS } from "./utils/siteSearch.js";
 
 const ALARM_NAME = "daily-price-check";
 const CHECK_INTERVAL_MINUTES = 60 * 24; // once a day
@@ -59,6 +63,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "CHECK_ALL_NOW") {
     checkAllProducts().then(() => sendResponse({ ok: true }));
     return true; // keep the message channel open for the async response
+  }
+  if (message?.type === "SEARCH_RETAILERS") {
+    searchRetailers(message.query).then((results) => sendResponse({ results }));
+    return true;
+  }
+  if (message?.type === "CHECK_ONE") {
+    getProducts().then(async (products) => {
+      const product = products.find((p) => p.id === message.productId);
+      if (product) await checkSingleProduct(product, (await getSettings()).minDropPercent);
+      sendResponse({ ok: true });
+    });
+    return true;
   }
 });
 
@@ -173,58 +189,55 @@ async function extractPriceViaFetch(url) {
 }
 
 /**
- * Slow path fallback: open the URL in a real (inactive) background tab so
- * its JS runs and the price actually renders, read the fully-rendered HTML
- * out of it via chrome.scripting, then close the tab. Needed for sites that
- * render price client-side and return an empty shell to a plain fetch.
+ * Slow path fallback: render the URL in a real (inactive) background tab so
+ * its JS runs and the price actually renders, then read the price out of
+ * the rendered HTML. Needed for sites that render price client-side and
+ * return an empty shell to a plain fetch.
  *
  * This IS the legitimate answer to "sites blocking bot access" — a real
  * Chrome tab has genuine cookies, JS execution, and browser fingerprint, so
  * it's far less likely to be flagged than a bare fetch() in the first place.
  */
 async function extractPriceViaTab(url) {
-  let tab;
-  try {
-    tab = await chrome.tabs.create({ url, active: false });
-    await waitForTabToLoad(tab.id);
-    // Give client-side rendering a moment to finish painting the price in.
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-
-    const [{ result: html }] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => document.documentElement.outerHTML,
-    });
-
-    return { price: extractPrice(html, url), blocked: isBlockedPage(html) };
-  } catch {
-    return { price: null, blocked: false };
-  } finally {
-    if (tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
-  }
+  const html = await renderUrlToHtml(url);
+  if (html === null) return { price: null, blocked: false };
+  return { price: extractPrice(html, url), blocked: isBlockedPage(html) };
 }
 
-/** Small delay helper for the inter-product jitter. */
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+/**
+ * "Search by description" — checks a small fixed list of retailers
+ * (utils/siteSearch.js) for the given query and returns the top match from
+ * each one it could parse. Never picks a "winner": the popup shows every
+ * result and the user chooses which (if any) to start tracking.
+ */
+async function searchRetailers(query) {
+  const results = [];
 
-/** Resolve once a tab finishes loading (or after a timeout, to avoid hanging forever). */
-function waitForTabToLoad(tabId, timeoutMs = 15000) {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve();
-    }, timeoutMs);
-
-    function listener(updatedTabId, info) {
-      if (updatedTabId === tabId && info.status === "complete") {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
+  for (const retailer of RETAILERS) {
+    const searchUrl = retailer.buildSearchUrl(query);
+    try {
+      const html = await renderUrlToHtml(searchUrl);
+      if (html === null) {
+        results.push({ retailer: retailer.name, error: "Couldn't load search results." });
+      } else if (isBlockedPage(html)) {
+        results.push({ retailer: retailer.name, error: "Site is blocking automated searches right now." });
+      } else {
+        const match = retailer.parseFirstResult(html, searchUrl);
+        results.push(
+          match
+            ? { retailer: retailer.name, ...match }
+            : { retailer: retailer.name, error: "No result found for that description." }
+        );
       }
+    } catch (err) {
+      results.push({ retailer: retailer.name, error: err.message });
     }
-    chrome.tabs.onUpdated.addListener(listener);
-  });
+    // Same jitter reasoning as the daily price checks — don't fire a burst
+    // of automated searches at four different sites back-to-back.
+    await sleep(2000 + Math.random() * 3000);
+  }
+
+  return results;
 }
 
 /** Toolbar badge: a green count of fresh drops, cleared once there are none. */

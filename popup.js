@@ -22,6 +22,13 @@ const checkNowBtn = document.getElementById("checkNowBtn");
 const runDot = document.getElementById("runDot");
 const runSummaryText = document.getElementById("runSummaryText");
 
+const modeUrlBtn = document.getElementById("modeUrlBtn");
+const modeSearchBtn = document.getElementById("modeSearchBtn");
+const searchForm = document.getElementById("searchForm");
+const descInput = document.getElementById("descInput");
+const searchResultsList = document.getElementById("searchResultsList");
+const searchResultTemplate = document.getElementById("searchResultTemplate");
+
 const settingsBtn = document.getElementById("settingsBtn");
 const settingsPanel = document.getElementById("settingsPanel");
 const notifEnabled = document.getElementById("notifEnabled");
@@ -38,9 +45,92 @@ document.addEventListener("DOMContentLoaded", async () => {
   await renderProducts();
   await initSettingsPanel();
   await renderRecentDrops();
+  initAddModeToggle();
   // Clear the toolbar badge once the user has actually seen the drop count.
   chrome.action.setBadgeText({ text: "" });
 });
+
+// ---------------------------------------------------------------------------
+// Add-mode toggle: paste-a-link vs. search-by-description
+// ---------------------------------------------------------------------------
+function initAddModeToggle() {
+  modeUrlBtn.addEventListener("click", () => {
+    modeUrlBtn.classList.add("active");
+    modeSearchBtn.classList.remove("active");
+    form.classList.remove("hidden");
+    searchForm.classList.add("hidden");
+    searchResultsList.classList.add("hidden");
+    setStatus("");
+  });
+
+  modeSearchBtn.addEventListener("click", () => {
+    modeSearchBtn.classList.add("active");
+    modeUrlBtn.classList.remove("active");
+    searchForm.classList.remove("hidden");
+    form.classList.add("hidden");
+    setStatus("");
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Search by description — checks a small fixed list of retailers and shows
+// the top match from each; the user picks which (if any) to track. See
+// utils/siteSearch.js for exactly which retailers and how each is parsed.
+// ---------------------------------------------------------------------------
+searchForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const query = descInput.value.trim();
+  if (!query) return;
+
+  setStatus("Searching a few retailers — this takes a bit, one site at a time on purpose…");
+  searchResultsList.innerHTML = "";
+  searchResultsList.classList.add("hidden");
+  searchForm.querySelector("button").disabled = true;
+
+  const { results } = await chrome.runtime.sendMessage({ type: "SEARCH_RETAILERS", query });
+
+  searchForm.querySelector("button").disabled = false;
+  setStatus(`Done — checked ${results.length} retailer${results.length === 1 ? "" : "s"}.`);
+  renderSearchResults(results);
+});
+
+function renderSearchResults(results) {
+  searchResultsList.innerHTML = "";
+  searchResultsList.classList.remove("hidden");
+
+  for (const result of results) {
+    const node = searchResultTemplate.content.cloneNode(true);
+    node.querySelector(".sr-retailer").textContent = result.retailer;
+
+    const titleEl = node.querySelector(".sr-title");
+    const trackBtn = node.querySelector(".sr-track-btn");
+    const priceEl = node.querySelector(".sr-price");
+
+    if (result.error) {
+      titleEl.textContent = result.error;
+      titleEl.classList.add("sr-error");
+      titleEl.removeAttribute("href");
+      priceEl.textContent = "";
+      trackBtn.disabled = true;
+    } else {
+      titleEl.textContent = result.title;
+      titleEl.href = result.url;
+      priceEl.textContent = `₹${result.price}`;
+
+      trackBtn.addEventListener("click", async () => {
+        trackBtn.disabled = true;
+        trackBtn.textContent = "Adding…";
+        const product = await addProduct({ url: result.url, title: result.title });
+        await chrome.runtime.sendMessage({ type: "CHECK_ONE", productId: product.id });
+        trackBtn.textContent = "Tracking ✓";
+        await renderProducts();
+        await renderRunSummary();
+      });
+    }
+
+    searchResultsList.appendChild(node);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Settings panel
