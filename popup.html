@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Price Drop Tracker</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="brand-icon">📉</span>
+      <h1>Price Drop Tracker</h1>
+    </div>
+    <div class="header-actions">
+      <button id="settingsBtn" title="Notification settings">⚙</button>
+      <button id="checkNowBtn" title="Check all prices now">
+        <span class="refresh-icon">↻</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="settingsPanel" class="settings-panel hidden">
+    <label class="settings-row">
+      <input type="checkbox" id="notifEnabled" />
+      Notify me on price drops
+    </label>
+    <label class="settings-row">
+      Minimum drop to notify
+      <select id="minDropPercent">
+        <option value="0">Any drop</option>
+        <option value="1">1% or more</option>
+        <option value="3">3% or more</option>
+        <option value="5">5% or more</option>
+        <option value="10">10% or more</option>
+      </select>
+    </label>
+    <label class="settings-row">
+      <input type="checkbox" id="quietHoursEnabled" />
+      Quiet hours (no pop-ups)
+    </label>
+    <div class="settings-row quiet-hours-range">
+      <select id="quietHoursStart"></select>
+      <span>to</span>
+      <select id="quietHoursEnd"></select>
+    </div>
+    <p class="settings-note">Drops are always recorded either way — this only controls the pop-up.</p>
+  </div>
+
+  <div id="runSummary" class="run-summary">
+    <span id="runDot" class="run-dot"></span>
+    <span id="runSummaryText">Not checked yet</span>
+  </div>
+
+  <form id="addForm">
+    <input type="url" id="urlInput" placeholder="Paste a product link…" required />
+    <button type="submit">Track</button>
+  </form>
+
+  <p id="statusMsg"></p>
+
+  <details id="recentDropsSection" class="recent-drops hidden">
+    <summary>Recent drops</summary>
+    <ul id="recentDropsList"></ul>
+  </details>
+
+  <ul id="productList"></ul>
+
+  <template id="productTemplate">
+    <li class="product">
+      <div class="product-main">
+        <a class="product-title" target="_blank" rel="noopener"></a>
+        <button class="remove-btn" title="Stop tracking">✕</button>
+      </div>
+      <div class="product-prices">
+        <span class="current-price"></span>
+        <span class="price-badge"></span>
+        <span class="lowest-price"></span>
+      </div>
+      <div class="sparkline-wrap"></div>
+      <div class="product-meta"></div>
+    </li>
+  </template>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
