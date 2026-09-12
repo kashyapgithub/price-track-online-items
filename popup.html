@@ -19,6 +19,15 @@
     </div>
   </header>
 
+  <div id="currentPageBanner" class="page-banner hidden">
+    <span class="page-banner-icon"></span>
+    <div class="page-banner-text">
+      <strong id="pageBannerTitle"></strong>
+      <span id="pageBannerSubtitle"></span>
+    </div>
+    <button id="pageBannerTrackBtn" class="page-banner-btn">Track this page</button>
+  </div>
+
   <div id="settingsPanel" class="settings-panel hidden">
     <label class="settings-row">
       <input type="checkbox" id="notifEnabled" />
@@ -97,6 +106,11 @@
       <div class="product-meta"></div>
     </li>
   </template>
+
+  <div id="toast" class="toast hidden">
+    <span id="toastText"></span>
+    <button id="toastUndoBtn" class="toast-undo">Undo</button>
+  </div>
 
   <script src="popup.js" type="module"></script>
 </body>

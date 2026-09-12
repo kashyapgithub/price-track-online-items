@@ -63,11 +63,27 @@ export async function addProduct({ url, title }) {
   return newProduct;
 }
 
-/** Remove a tracked product by id. */
+/** Remove a tracked product by id. Returns the removed product (or null) so callers can offer "Undo". */
 export async function removeProduct(id) {
   const products = await getProducts();
+  const removed = products.find((p) => p.id === id) || null;
   const filtered = products.filter((p) => p.id !== id);
   await saveProducts(filtered);
+  return removed;
+}
+
+/** Re-insert a previously-removed product exactly as it was — used by the popup's "Undo" toast. */
+export async function restoreProduct(product) {
+  const products = await getProducts();
+  if (products.some((p) => p.id === product.id)) return; // already there, nothing to do
+  products.push(product);
+  await saveProducts(products);
+}
+
+/** True if a URL is already being tracked — used by the "Track this page" banner to avoid duplicates. */
+export async function isUrlTracked(url) {
+  const products = await getProducts();
+  return products.some((p) => p.url === url);
 }
 
 /**

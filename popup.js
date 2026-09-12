@@ -8,10 +8,11 @@
  * touches the DOM.
  */
 
-import { getProducts, addProduct, removeProduct, getMeta } from "./utils/storage.js";
-import { extractTitle } from "./utils/priceExtractor.js";
+import { getProducts, addProduct, removeProduct, restoreProduct, isUrlTracked, getMeta, recordPriceCheck } from "./utils/storage.js";
+import { extractTitle, extractPrice } from "./utils/priceExtractor.js";
 import { getSettings, setSettings } from "./utils/settings.js";
 import { getRecentDrops } from "./utils/dropLog.js";
+import { detectProductPage } from "./utils/productPageDetector.js";
 
 const form = document.getElementById("addForm");
 const urlInput = document.getElementById("urlInput");
@@ -37,6 +38,17 @@ const minDropPercent = document.getElementById("minDropPercent");
 const recentDropsSection = document.getElementById("recentDropsSection");
 const recentDropsList = document.getElementById("recentDropsList");
 
+const currentPageBanner = document.getElementById("currentPageBanner");
+const pageBannerIcon = currentPageBanner.querySelector(".page-banner-icon");
+const pageBannerTitle = document.getElementById("pageBannerTitle");
+const pageBannerSubtitle = document.getElementById("pageBannerSubtitle");
+const pageBannerTrackBtn = document.getElementById("pageBannerTrackBtn");
+
+const toast = document.getElementById("toast");
+const toastText = document.getElementById("toastText");
+const toastUndoBtn = document.getElementById("toastUndoBtn");
+let toastTimer = null;
+
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
@@ -45,10 +57,73 @@ document.addEventListener("DOMContentLoaded", async () => {
   await renderProducts();
   await initSettingsPanel();
   await renderRecentDrops();
+  await initCurrentPageBanner();
   initAddModeToggle();
   // Clear the toolbar badge once the user has actually seen the drop count.
   chrome.action.setBadgeText({ text: "" });
 });
+
+// ---------------------------------------------------------------------------
+// "Track this page" — detects if the tab open behind the popup is a real
+// product page on a supported retailer, and lets you track it in one click
+// instead of copy-pasting the URL. See utils/productPageDetector.js for
+// exactly what counts as a "product page" vs. a homepage/search page.
+// ---------------------------------------------------------------------------
+async function initCurrentPageBanner() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.url) return;
+
+  const detected = detectProductPage(tab.url);
+  if (!detected) return; // not a recognized product page — banner stays hidden
+
+  const alreadyTracked = await isUrlTracked(tab.url);
+  currentPageBanner.classList.remove("hidden");
+  pageBannerIcon.textContent = "📦";
+
+  if (alreadyTracked) {
+    currentPageBanner.classList.add("already-tracked");
+    pageBannerTitle.textContent = "Already tracking this page";
+    pageBannerSubtitle.textContent = detected.retailer;
+    pageBannerTrackBtn.classList.add("hidden");
+    return;
+  }
+
+  pageBannerTitle.textContent = `${detected.retailer} product page detected`;
+  pageBannerSubtitle.textContent = tab.title || tab.url;
+
+  pageBannerTrackBtn.addEventListener("click", async () => {
+    pageBannerTrackBtn.disabled = true;
+    pageBannerTrackBtn.textContent = "Adding…";
+
+    // Read straight from the tab that's already open and rendered — no
+    // extra fetch, no bot-detection risk, just the page you're already on.
+    let html = null;
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => document.documentElement.outerHTML,
+      });
+      html = result;
+    } catch {
+      // Falls through to adding with just the URL below.
+    }
+
+    const title = (html && extractTitle(html)) || tab.title || tab.url;
+    const product = await addProduct({ url: tab.url, title });
+
+    if (html) {
+      const price = extractPrice(html, tab.url);
+      await recordPriceCheck(product.id, {
+        price,
+        error: price === null ? "Couldn't find a price on this page yet." : null,
+      });
+    }
+
+    pageBannerTrackBtn.textContent = "Tracking ✓";
+    await renderProducts();
+    await renderRunSummary();
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Add-mode toggle: paste-a-link vs. search-by-description
@@ -328,11 +403,35 @@ function buildProductRow(product) {
   }
 
   node.querySelector(".remove-btn").addEventListener("click", async () => {
-    await removeProduct(product.id);
+    const removed = await removeProduct(product.id);
     await renderProducts();
+    if (removed) showUndoToast(removed);
   });
 
   return node;
+}
+
+/**
+ * A removal always shows a brief "Removed — Undo" toast instead of vanishing
+ * silently, since a stray click on the ✕ shouldn't mean re-pasting the link.
+ */
+function showUndoToast(removedProduct) {
+  clearTimeout(toastTimer);
+  toastText.textContent = `Removed "${truncate(removedProduct.title, 40)}"`;
+  toast.classList.remove("hidden");
+
+  toastUndoBtn.onclick = async () => {
+    clearTimeout(toastTimer);
+    toast.classList.add("hidden");
+    await restoreProduct(removedProduct);
+    await renderProducts();
+  };
+
+  toastTimer = setTimeout(() => toast.classList.add("hidden"), 6000);
+}
+
+function truncate(str, max) {
+  return str.length > max ? `${str.slice(0, max - 1)}…` : str;
 }
 
 /**

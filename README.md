@@ -1,6 +1,8 @@
 # Price Drop Tracker (Chrome Extension)
 
-Paste in product links — or just search by description — and it checks
+Open a product page on Amazon, Flipkart, Croma, or Reliance Digital and click
+the extension icon — it detects the page and offers to track it in one
+click. Or paste a link, or search by description. Either way, it checks
 prices once a day (plus on-demand via the ↻ button) and pings you with a
 notification the moment a price drops.
 
@@ -17,6 +19,7 @@ notification the moment a price drops.
 - **popup.html/js/css** — the UI. Add a link (or search by description), see your tracked products, remove one, or force a check.
 - **background.js** — a service worker that runs once a day via `chrome.alarms`, checks each product's price, and handles retailer search requests from the popup.
 - **utils/priceExtractor.js** — pulls the price out of a product page's HTML. Checks, in order: JSON-LD product schema → OpenGraph/itemprop meta tags → hardcoded fallbacks for Amazon/Flipkart. Also detects anti-bot interstitials (`isBlockedPage`).
+- **utils/productPageDetector.js** — recognizes whether a URL is an actual product page (not a homepage/search/category page) on Amazon, Flipkart, Croma, or Reliance Digital. Powers the "Track this page" banner.
 - **utils/tabRenderer.js** — shared helper (used by both price-checking and description-search) that renders a URL in a real, inactive Chrome tab and returns the rendered HTML. This is the core defense against bot-blocking — see below.
 - **utils/siteSearch.js** — the "search by description" feature: the fixed list of retailers, how to build each one's search URL, and how to parse its first result.
 - **utils/storage.js** — all reads/writes to the tracked product list and the daily `meta` run summary.
@@ -83,7 +86,22 @@ So a slow bleed that never trips the daily threshold (₹2000 → ₹1990 → �
 - **Persistent blocks need a different tool, not a more aggressive scraper** — see "How prices are found" above.
 - **Search-by-description accuracy varies by retailer** — see "Search by description" above.
 
+## Track this page (one click, no copy-pasting)
+
+Open a product page on Amazon, Flipkart, Croma, or Reliance Digital, click the extension icon, and a banner appears at the top: **"[Retailer] product page detected — Track this page."** One click adds it — no URL copy-paste needed.
+
+How it's different from every other extraction path in this extension: it reads the page **you're already looking at**, directly, via `chrome.scripting.executeScript` on the active tab. No `fetch()`, no opening a background tab, no extra request to the retailer at all — so there's zero additional bot-detection exposure for this path.
+
+- **Detection is product-page-specific, not domain-specific** — `utils/productPageDetector.js` checks for the URL patterns unique to an actual product (an ASIN for Amazon, a `/p/` product-slug for the other three), so the extension's own homepage, search results, or category pages on these sites correctly show no banner.
+- **Already tracking it?** The banner still shows, but in a neutral gray with no button — "Already tracking this page" — so you always know the state without needing to scroll the list.
+- **Not a supported retailer, or not a product page?** No banner at all. It stays out of the way rather than showing something irrelevant.
+
+## Removing a tracked product
+
+Click ✕ on any product card. It's removed immediately, but a toast appears at the bottom — **"Removed '[title]' · Undo"** — for 6 seconds, in case that was a misclick. Undo restores the exact product, price history and all, not a fresh re-add.
+
 ## Extending it
 
 - **New site for direct price tracking** — add one regex to `extractFromKnownSites()` in `utils/priceExtractor.js`.
 - **New retailer for description search** — add one entry (`buildSearchUrl` + `parseFirstResult`) to the `RETAILERS` array in `utils/siteSearch.js`.
+- **New retailer for "Track this page"** — add one entry to `DETECTORS` in `utils/productPageDetector.js`.
